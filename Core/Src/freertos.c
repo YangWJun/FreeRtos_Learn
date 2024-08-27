@@ -33,6 +33,7 @@
 #include "croutine.h"
 #include "semphr.h"
 #include "usart.h"
+#include "event_groups.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -82,6 +83,13 @@ const osThreadAttr_t myTask04_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for myTask05 */
+osThreadId_t myTask05Handle;
+const osThreadAttr_t myTask05_attributes = {
+  .name = "myTask05",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for myQueue01 */
 osMessageQueueId_t myQueue01Handle;
 const osMessageQueueAttr_t myQueue01_attributes = {
@@ -102,6 +110,11 @@ osSemaphoreId_t UARST_RXHandle;
 const osSemaphoreAttr_t UARST_RX_attributes = {
   .name = "UARST_RX"
 };
+/* Definitions for myEvent01 */
+osEventFlagsId_t myEvent01Handle;
+const osEventFlagsAttr_t myEvent01_attributes = {
+  .name = "myEvent01"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -112,6 +125,7 @@ void StartDefaultTask(void *argument);
 void OLED_SHOW_1(void *argument);
 void OLED_SHOW_2(void *argument);
 void USART_TX(void *argument);
+void LED_Flash_2(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -168,9 +182,15 @@ void MX_FREERTOS_Init(void) {
   /* creation of myTask04 */
   myTask04Handle = osThreadNew(USART_TX, NULL, &myTask04_attributes);
 
+  /* creation of myTask05 */
+  myTask05Handle = osThreadNew(LED_Flash_2, NULL, &myTask05_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
+
+  /* creation of myEvent01 */
+  myEvent01Handle = osEventFlagsNew(&myEvent01_attributes);
 
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
@@ -195,7 +215,8 @@ void StartDefaultTask(void *argument)
       HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_3);
       count++;
       if(count==5) {
-          xTaskNotifyGive(myTask02Handle);  //释放任务通知
+         // xTaskNotifyGive(myTask02Handle);  //释放任务通知，�?�知Task2
+          xEventGroupSetBits(myEvent01Handle , 0x01);
 count=0;
       }
 
@@ -225,9 +246,8 @@ void OLED_SHOW_1(void *argument)
       OLED_ShowNum(1,1,count,4);
       xSemaphoreGive(myMutex01Handle);
 
-     uint32_t  x=ulTaskNotifyTake(pdTRUE,10);//获取任务通知
-if(x==1)
-      HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_4);
+    // uint32_t  x=ulTaskNotifyTake(pdTRUE,10);//获取任务通知
+
     osDelay(1);
   }
   /* USER CODE END OLED_SHOW_1 */
@@ -285,6 +305,29 @@ void USART_TX(void *argument)
   /* USER CODE END USART_TX */
 }
 
+/* USER CODE BEGIN Header_LED_Flash_2 */
+/**
+* @brief Function implementing the myTask05 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_LED_Flash_2 */
+void LED_Flash_2(void *argument)
+{
+  /* USER CODE BEGIN LED_Flash_2 */
+  /* Infinite loop */
+  for(;;)
+  {
+
+      uint32_t x=xEventGroupWaitBits(myEvent01Handle ,0x01,pdTRUE,pdTRUE,portMAX_DELAY);
+          HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_4);
+
+
+    osDelay(1);
+  }
+  /* USER CODE END LED_Flash_2 */
+}
+
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -296,7 +339,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
        static uint8_t uart;
         //  printf("%c\n",uart);
         xQueueSendFromISR(USAR_RXHandle,&uart,pxHigherPriorityTaskWoken);
-
         HAL_UART_Receive_IT(&huart1,&uart,1);
         xSemaphoreGiveFromISR(UARST_RXHandle,pxHigherPriorityTaskWoken);
     }
